@@ -4,7 +4,6 @@ import { useState } from "react";
 import PrismAtom from "./PrismAtom";
 import { Settings2, RefreshCcw, Shuffle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import RanchNavigation from "../../RanchNavigation";
 
 const DEFAULTS = {
   rings: 3,
@@ -70,9 +69,6 @@ export default function PrismAtomPreview() {
         hueShift={hueShift}
         className="absolute inset-0 w-full h-full"
       />
-      <div className="absolute left-4 top-4 z-30 sm:left-6 sm:top-6">
-        <RanchNavigation compact />
-      </div>
 
       <button
         onClick={remix}
