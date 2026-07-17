@@ -7,12 +7,13 @@ import { cn } from "@/lib/utils";
 import RanchNavigation from "../../RanchNavigation";
 
 const DEFAULTS = {
-  scale: 1,
-  lengthScale: 1,
+  scale: 0.75,
+  lengthScale: 0.85,
   raggedness: 0.3,
-  mouseRadius: 130,
-  mastWidth: 0.94,
+  mouseRadius: 110,
   luminous: true,
+  coverage: 0.64,
+  colorMode: 'multi' as const,
 };
 
 export default function TempleChimePreview() {
@@ -20,8 +21,9 @@ export default function TempleChimePreview() {
   const [lengthScale, setLengthScale] = useState(DEFAULTS.lengthScale);
   const [raggedness, setRaggedness] = useState(DEFAULTS.raggedness);
   const [mouseRadius, setMouseRadius] = useState(DEFAULTS.mouseRadius);
-  const [mastWidth, setMastWidth] = useState(DEFAULTS.mastWidth);
   const [luminous, setLuminous] = useState(DEFAULTS.luminous);
+  const [coverage, setCoverage] = useState(DEFAULTS.coverage);
+  const [colorMode, setColorMode] = useState<'multi' | 'white'>(DEFAULTS.colorMode);
   const [muted, setMuted] = useState(false);
   const [isPanelOpen, setIsPanelOpen] = useState(true);
 
@@ -30,31 +32,31 @@ export default function TempleChimePreview() {
     setLengthScale(DEFAULTS.lengthScale);
     setRaggedness(DEFAULTS.raggedness);
     setMouseRadius(DEFAULTS.mouseRadius);
-    setMastWidth(DEFAULTS.mastWidth);
     setLuminous(DEFAULTS.luminous);
+    setCoverage(DEFAULTS.coverage);
+    setColorMode(DEFAULTS.colorMode);
   };
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-black font-sans">
-      <TempleChime
-        key={`${scale}-${lengthScale}-${raggedness}-${mouseRadius}-${mastWidth}-${luminous}`}
-        className="absolute inset-0 h-full w-full"
-        scale={scale}
-        lengthScale={lengthScale}
-        raggedness={raggedness}
-        mouseRadius={mouseRadius}
-        mastWidth={mastWidth}
-        luminous={luminous}
-        muted={muted}
-      />
+      <div className="absolute inset-x-0 top-0 flex h-[90%] items-start justify-center sm:h-[88%]">
+        <TempleChime
+          key={`${scale}-${lengthScale}-${raggedness}-${mouseRadius}-${luminous}-${coverage}-${colorMode}`}
+          className="h-full w-full"
+          scale={scale}
+          lengthScale={lengthScale}
+          raggedness={raggedness}
+          mouseRadius={mouseRadius}
+          luminous={luminous}
+          coverage={coverage}
+          colorMode={colorMode}
+          muted={muted}
+        />
+      </div>
 
       <div className="absolute left-4 top-4 z-30 sm:left-6 sm:top-6">
         <RanchNavigation compact />
       </div>
-
-      <p className="pointer-events-none absolute bottom-8 left-1/2 z-20 -translate-x-1/2 text-center text-xs text-white/40">
-        Brush your cursor through the beads
-      </p>
 
       <button
         onClick={() => setMuted((m) => !m)}
@@ -92,17 +94,44 @@ export default function TempleChimePreview() {
             <div>
               <h3 className="mb-4 text-sm font-semibold text-white">Curtain</h3>
               <div className="space-y-4">
-                <ControlSlider label="Bead Size" value={scale} min={0.6} max={1.6} step={0.05} onChange={setScale} />
-                <ControlSlider label="Strand Length" value={lengthScale} min={0.4} max={1.3} step={0.05} onChange={setLengthScale} />
+                <ControlSlider label="Glyph Size" value={scale} min={0.5} max={1.4} step={0.05} onChange={setScale} />
+                <ControlSlider label="Strand Length" value={lengthScale} min={0.2} max={2.5} step={0.05} onChange={setLengthScale} />
+                <ControlSlider label="Coverage" value={coverage} min={0.4} max={1.5} step={0.02} onChange={setCoverage} />
                 <ControlSlider label="Raggedness" value={raggedness} min={0} max={0.8} step={0.02} onChange={setRaggedness} />
-                <ControlSlider label="Mouse Reach" value={mouseRadius} min={60} max={220} step={5} onChange={setMouseRadius} />
+                <ControlSlider label="Mouse Reach" value={mouseRadius} min={50} max={180} step={5} onChange={setMouseRadius} />
               </div>
             </div>
 
             <div className="border-t border-white/10 pt-6">
-              <h3 className="mb-4 text-sm font-semibold text-white">Mast</h3>
+              <h3 className="mb-4 text-sm font-semibold text-white">Look</h3>
               <div className="space-y-4">
-                <ControlSlider label="Mast Width" value={mastWidth} min={0.5} max={1} step={0.02} onChange={setMastWidth} />
+                <div className="flex items-center justify-between text-xs font-medium text-white/60">
+                  <span>Color Mode</span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setColorMode('multi')}
+                      className={`rounded-md px-3 py-1.5 transition ${
+                        colorMode === 'multi'
+                          ? 'bg-white text-black'
+                          : 'bg-white/10 text-white/70 hover:bg-white/20'
+                      }`}
+                    >
+                      Multi
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setColorMode('white')}
+                      className={`rounded-md px-3 py-1.5 transition ${
+                        colorMode === 'white'
+                          ? 'bg-white text-black'
+                          : 'bg-white/10 text-white/70 hover:bg-white/20'
+                      }`}
+                    >
+                      White
+                    </button>
+                  </div>
+                </div>
                 <label className="flex items-center justify-between text-xs font-medium text-white/60">
                   <span>Luminous Glow</span>
                   <input

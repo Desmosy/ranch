@@ -1,15 +1,3 @@
-/**
- * Synthesized bead-curtain / wind-chime sound, built entirely with the
- * Web Audio API — no audio files. Each "brush" through the strands is a
- * short percussive click (beads knocking together) topped with a bright,
- * inharmonic bell partial stack (small temple bells), volume and
- * brightness scaled by how fast the hand moves through the curtain.
- *
- * Browsers keep audio muted until the page receives a real user gesture
- * (click / tap / key). Global unlock listeners are attached on first use
- * so any interaction anywhere on the page arms the audio.
- */
-
 let ctx: AudioContext | null = null
 let master: GainNode | null = null
 let noiseBuffer: AudioBuffer | null = null
@@ -19,16 +7,13 @@ let listenersAttached = false
 function ensureContext(): AudioContext | null {
   if (typeof window === 'undefined') return null
   if (!ctx) {
-    const AC =
-      window.AudioContext ??
-      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
     if (!AC) return null
     ctx = new AC()
     master = ctx.createGain()
     master.gain.value = 0.85
     master.connect(ctx.destination)
 
-    // 1s of white noise, reused by every knock
     const len = ctx.sampleRate
     noiseBuffer = ctx.createBuffer(1, len, ctx.sampleRate)
     const data = noiseBuffer.getChannelData(0)
@@ -38,7 +23,6 @@ function ensureContext(): AudioContext | null {
   return ctx
 }
 
-/** Resume the context and play a silent kick (required on iOS). */
 function tryUnlock() {
   if (!ctx) return
   if (ctx.state === 'suspended') {
@@ -50,9 +34,7 @@ function tryUnlock() {
     src.buffer = buf
     src.connect(ctx.destination)
     src.start(0)
-  } catch {
-    // ignore
-  }
+  } catch {}
 }
 
 function attachUnlockListeners() {
@@ -68,20 +50,13 @@ function attachUnlockListeners() {
   for (const ev of GESTURES) window.addEventListener(ev, unlock, { passive: true })
 }
 
-/**
- * Kept for callers that want to force an unlock attempt from their own
- * gesture handlers (e.g. the curtain's pointerdown).
- */
 export function unlockTempleChimeAudio() {
   ensureContext()
   tryUnlock()
 }
 
-/**
- * Play one bead-knock. `intensity` 0..1 maps hand speed to volume and
- * brightness. Throttled internally so rapid pointermove events blend
- * into a continuous rattle instead of machine-gunning bursts.
- */
+const NOTES = [1567.98, 1760, 2093, 2349.3, 2637, 3135.96]
+
 export function playTempleChimeBrush(intensity: number) {
   const c = ensureContext()
   if (!c || !master || !noiseBuffer) return
@@ -97,8 +72,6 @@ export function playTempleChimeBrush(intensity: number) {
   const t = c.currentTime
   const amp = 0.045 + Math.min(1, intensity) * 0.1
 
-  // bead-on-bead click: tight, high bandpassed noise burst with a very
-  // quick decay — sharper and shorter than a fabric swish
   const src = c.createBufferSource()
   src.buffer = noiseBuffer
   src.playbackRate.value = 0.9 + Math.random() * 0.4
@@ -119,12 +92,8 @@ export function playTempleChimeBrush(intensity: number) {
   src.start(t, Math.random() * 0.5, 0.12)
   src.stop(t + 0.14)
 
-  // small temple bell strike — inharmonic partials so overlapping
-  // chimes stay bright and metallic rather than muddy
   if (intensity > 0.06) {
-    // pentatonic-ish strike tones so overlapping bells stay consonant
-    const notes = [1567.98, 1760, 2093, 2349.3, 2637, 3135.96]
-    const f0 = notes[Math.floor(Math.random() * notes.length)]
+    const f0 = NOTES[Math.floor(Math.random() * NOTES.length)]
     const partials = [
       { ratio: 1, gain: 1, decay: 0.85 },
       { ratio: 2.4, gain: 0.5, decay: 0.5 },
@@ -151,11 +120,9 @@ export function playTempleChimeBrush(intensity: number) {
       osc.stop(t + p.decay + 0.05)
     }
 
-    // occasional second, softer knock a moment later — neighboring
-    // beads bumping as the strand swings back
     if (Math.random() < 0.4) {
       const dt = 0.05 + Math.random() * 0.07
-      const f1 = notes[Math.floor(Math.random() * notes.length)]
+      const f1 = NOTES[Math.floor(Math.random() * NOTES.length)]
       const osc2 = c.createOscillator()
       osc2.type = 'sine'
       osc2.frequency.value = f1 * detune

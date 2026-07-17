@@ -4,8 +4,6 @@ import { useEffect, useId, useRef } from 'react'
 import { playTempleChimeBrush, unlockTempleChimeAudio } from './templeChimeAudio'
 import templeMastSrc from './assets/temple-mast.png'
 
-type NodeKind = 'bead' | 'spacer' | 'bell'
-
 type Node = {
   x: number
   y: number
@@ -13,87 +11,63 @@ type Node = {
   py: number
   homeX: number
   homeY: number
-  kind: NodeKind
+  char: string
   color: string
-  radius: number
+  alpha: number
   visible: boolean
-  cell: { sx: number; sy: number; size: number } | null
+  cell: { sx: number; sy: number } | null
 }
 
 export type TempleChimeProps = {
   className?: string
-  /** The temple mast / roof-ridge image the curtain hangs beneath. */
   imageSrc?: string
   imageAlt?: string
-  /** Bead ink palette; strands are painted in short runs from these. */
-  beadColors?: string[]
-  /**
-   * Scales the bead size and the grid together (default 1). Values
-   * below 1 shrink the beads and pack the strands tighter.
-   */
+  charPool?: string
+  colors?: string[]
+  inkAlpha?: number
   scale?: number
-  /** Multiplier on strand length (default 1). */
   lengthScale?: number
-  /** 0-1: how uneven the strand lengths are (default 0.3). */
   raggedness?: number
-  /** Pixel radius of the cursor's influence on the beads (default 130). */
   mouseRadius?: number
-  /** Soft glow behind each bead/bell, like lit gemstones (default true). */
   luminous?: boolean
-  /** Fraction of the container's width the mast image spans (default 0.94). */
-  mastWidth?: number
-  /** Mute the synthesized chime/bead sound. */
+  roofSpan?: number
+  coverage?: number
+  colorMode?: 'multi' | 'white'
   muted?: boolean
 }
 
-const DEFAULT_COLORS = ['#e8c46a', '#2f9e8f', '#c0453f', '#3f7a52', '#3a5fc0', '#e8c46a']
-const BELL_COLOR = '#c9973a'
-const SPACER_COLOR = '#f0d68a'
+const DEFAULT_CHAR_POOL =
+  'ॐ नमः शिवाय गणपतये ह्रीं हं सः वः यं रं लं वं हं ओं आं इं उं ऎं ऐं ओं औं कं खं गं घं चं छं जं झं टं ठं डं ढं तं थं दं धं नं पं फं बं भं मं यं रं लं वं शं षं सं हं क्षं त्रं ज्ञं ཨཱཿཧཱུྃༀབཛྲགུ་རུཔདྨསཱམཱཡཱ'
 
-const COL_SPACING = 15
-const ROW_SPACING = 17
-const BEAD_RADIUS = 5.2
+const DEFAULT_COLORS = ['#e8c46a', '#2f9e8f', '#c0453f', '#3a5fc0', '#e8c46a']
+
+const COL_SPACING = 9
+const ROW_SPACING = 10
+const FONT_SIZE = 7.5
 const DAMPING = 0.94
-const HOME_STIFFNESS = 0.013
+const HOME_STIFFNESS = 0.014
 const CONSTRAINT_ITERATIONS = 2
 const ALPHA_THRESHOLD = 24
 
-function clamp01(v: number) {
-  return Math.max(0, Math.min(1, v))
-}
-
-function shade(hex: string, percent: number): string {
-  // percent > 0 lightens toward white, < 0 darkens toward black
-  const n = hex.replace('#', '')
-  const r = parseInt(n.substring(0, 2), 16)
-  const g = parseInt(n.substring(2, 4), 16)
-  const b = parseInt(n.substring(4, 6), 16)
-  const t = percent < 0 ? 0 : 255
-  const p = Math.abs(percent)
-  const mix = (c: number) => Math.round((t - c) * p + c)
-  return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`
-}
-
-/**
- * A hanging bead curtain: each column is a verlet chain of round beads
- * pinned to the underside of a temple mast image (its alpha silhouette
- * traced so strands hang from the actual roofline, not a straight
- * line), tipped with a small bell. The cursor parts the strands like a
- * real doorway curtain and they swing back, ringing softly.
- */
 export default function TempleChime({
   className,
   imageSrc = templeMastSrc,
   imageAlt = 'Gilded Nepali temple roof ridge with a Dharma wheel and deer, flanked by dragon-head finials',
-  beadColors = DEFAULT_COLORS,
-  scale = 1,
-  lengthScale = 1,
+  charPool = DEFAULT_CHAR_POOL,
+  colors: rawColors = DEFAULT_COLORS,
+  inkAlpha = 0.95,
+  scale = 0.75,
+  lengthScale = 0.85,
   raggedness = 0.3,
-  mouseRadius = 130,
+  mouseRadius = 110,
   luminous = true,
-  mastWidth = 0.94,
+  roofSpan = 0.85,
+  coverage = 0.64,
+  colorMode = 'multi',
   muted = false,
 }: TempleChimeProps) {
+  const mastWidth = 0.4
+  const colors = colorMode === 'white' ? ['#ffffff'] : rawColors
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const imgRef = useRef<HTMLImageElement>(null)
   const reactId = useId()
@@ -107,7 +81,7 @@ export default function TempleChime({
 
     const colSpacing = COL_SPACING * scale
     const rowSpacing = ROW_SPACING * scale
-    const beadRadius = BEAD_RADIUS * scale
+    const fontSize = FONT_SIZE * scale
 
     let columns: Node[][] = []
     let width = 0
@@ -123,137 +97,60 @@ export default function TempleChime({
     let contourW = 0
     let contourH = 0
 
-    // --- sprite atlas ---------------------------------------------------
-    // every unique color/kind pair is rasterized once into an offscreen
-    // atlas and stamped with drawImage each frame, instead of drawing
-    // gradients/paths per bead per frame.
     let atlas: HTMLCanvasElement | null = null
-    let atlasMap = new Map<string, { sx: number; sy: number; size: number }>()
-    let cellCss = 0
-    let cellDevice = 0
-
-    function drawBeadSprite(actx: CanvasRenderingContext2D, cx: number, cy: number, r: number, color: string) {
-      if (luminous) {
-        const glow = actx.createRadialGradient(cx, cy, 0, cx, cy, r * 2.4)
-        glow.addColorStop(0, `${color}55`)
-        glow.addColorStop(1, `${color}00`)
-        actx.fillStyle = glow
-        actx.beginPath()
-        actx.arc(cx, cy, r * 2.4, 0, Math.PI * 2)
-        actx.fill()
-      }
-      const g = actx.createRadialGradient(cx - r * 0.35, cy - r * 0.35, r * 0.1, cx, cy, r)
-      g.addColorStop(0, shade(color, 0.55))
-      g.addColorStop(0.55, color)
-      g.addColorStop(1, shade(color, -0.35))
-      actx.fillStyle = g
-      actx.beginPath()
-      actx.arc(cx, cy, r, 0, Math.PI * 2)
-      actx.fill()
-      actx.strokeStyle = shade(color, -0.5)
-      actx.lineWidth = Math.max(0.5, r * 0.12)
-      actx.stroke()
-    }
-
-    function drawSpacerSprite(actx: CanvasRenderingContext2D, cx: number, cy: number, r: number) {
-      drawBeadSprite(actx, cx, cy, r * 0.62, SPACER_COLOR)
-      actx.strokeStyle = shade(SPACER_COLOR, -0.6)
-      actx.lineWidth = Math.max(0.4, r * 0.08)
-      actx.beginPath()
-      actx.moveTo(cx - r * 0.4, cy)
-      actx.lineTo(cx + r * 0.4, cy)
-      actx.stroke()
-    }
-
-    function drawBellSprite(actx: CanvasRenderingContext2D, cx: number, cy: number, r: number) {
-      if (luminous) {
-        const glow = actx.createRadialGradient(cx, cy, 0, cx, cy, r * 2.2)
-        glow.addColorStop(0, `${BELL_COLOR}66`)
-        glow.addColorStop(1, `${BELL_COLOR}00`)
-        actx.fillStyle = glow
-        actx.beginPath()
-        actx.arc(cx, cy, r * 2.2, 0, Math.PI * 2)
-        actx.fill()
-      }
-      // loop
-      actx.strokeStyle = shade(BELL_COLOR, -0.4)
-      actx.lineWidth = Math.max(0.5, r * 0.12)
-      actx.beginPath()
-      actx.arc(cx, cy - r * 1.05, r * 0.22, 0, Math.PI * 2)
-      actx.stroke()
-      // dome
-      const domeTop = cy - r * 0.85
-      const domeBottom = cy + r * 0.25
-      const domeW = r * 0.95
-      const g = actx.createLinearGradient(cx - domeW, domeTop, cx + domeW, domeBottom)
-      g.addColorStop(0, shade(BELL_COLOR, 0.45))
-      g.addColorStop(0.5, BELL_COLOR)
-      g.addColorStop(1, shade(BELL_COLOR, -0.4))
-      actx.fillStyle = g
-      actx.beginPath()
-      actx.moveTo(cx - domeW, domeBottom)
-      actx.quadraticCurveTo(cx - domeW, domeTop, cx, domeTop)
-      actx.quadraticCurveTo(cx + domeW, domeTop, cx + domeW, domeBottom)
-      actx.closePath()
-      actx.fill()
-      actx.strokeStyle = shade(BELL_COLOR, -0.5)
-      actx.lineWidth = Math.max(0.5, r * 0.1)
-      actx.stroke()
-      // rim
-      actx.beginPath()
-      actx.ellipse(cx, domeBottom, domeW, r * 0.16, 0, 0, Math.PI * 2)
-      actx.fillStyle = shade(BELL_COLOR, -0.25)
-      actx.fill()
-      // clapper
-      actx.strokeStyle = shade(BELL_COLOR, -0.5)
-      actx.lineWidth = Math.max(0.4, r * 0.08)
-      actx.beginPath()
-      actx.moveTo(cx, domeBottom)
-      actx.lineTo(cx, domeBottom + r * 0.55)
-      actx.stroke()
-      actx.beginPath()
-      actx.arc(cx, domeBottom + r * 0.75, r * 0.22, 0, Math.PI * 2)
-      actx.fillStyle = shade(BELL_COLOR, -0.15)
-      actx.fill()
-    }
+    let atlasMap = new Map<string, { sx: number; sy: number }>()
+    const ATLAS_PAD = 3
+    let atlasCellCss = 0
+    let atlasCellDevice = 0
 
     function buildAtlas() {
-      const inks = Array.from(new Set(beadColors))
-      const kinds: { key: string; draw: (actx: CanvasRenderingContext2D, cx: number, cy: number, r: number) => void }[] =
-        []
-      for (const ink of inks) {
-        kinds.push({ key: `bead|${ink}`, draw: (actx, cx, cy, r) => drawBeadSprite(actx, cx, cy, r, ink) })
-      }
-      kinds.push({ key: 'spacer', draw: drawSpacerSprite })
-      kinds.push({ key: 'bell', draw: drawBellSprite })
-
+      const inks = Array.from(new Set(colors.length > 0 ? colors : ['#e8c46a']))
+      const chars = Array.from(new Set(charPool.split('')))
       const scaleFactor = dpr
-      cellCss = beadRadius * 2 * 1.9
-      cellDevice = cellCss * scaleFactor
+      atlasCellCss = fontSize + ATLAS_PAD * 2
+      atlasCellDevice = atlasCellCss * scaleFactor
 
-      const cols = Math.ceil(Math.sqrt(kinds.length))
-      const rows = Math.ceil(kinds.length / cols)
+      const total = chars.length * inks.length
+      const cols = Math.ceil(Math.sqrt(total))
+      const rows = Math.ceil(total / cols)
 
       atlas = document.createElement('canvas')
-      atlas.width = Math.ceil(cols * cellDevice)
-      atlas.height = Math.ceil(rows * cellDevice)
+      atlas.width = Math.ceil(cols * atlasCellDevice)
+      atlas.height = Math.ceil(rows * atlasCellDevice)
       const actx = atlas.getContext('2d')
       if (!actx) {
         atlas = null
         return
       }
       actx.scale(scaleFactor, scaleFactor)
+      actx.font = `${luminous ? 500 : 400} ${fontSize}px 'Noto Sans Devanagari', 'Noto Serif Devanagari', 'Tibetan Machine Uni', 'Kokonor', 'Songti SC', 'Noto Serif SC', sans-serif`
+      actx.textAlign = 'center'
+      actx.textBaseline = 'middle'
 
       atlasMap = new Map()
-      kinds.forEach((k, i) => {
-        const cx = (i % cols) * cellCss + cellCss / 2
-        const cy = Math.floor(i / cols) * cellCss + cellCss / 2
-        const r = k.key === 'bell' ? beadRadius * 0.85 : beadRadius
-        k.draw(actx, cx, cy, r)
-        atlasMap.set(k.key, { sx: (i % cols) * cellDevice, sy: Math.floor(i / cols) * cellDevice, size: cellDevice })
-      })
+      let i = 0
+      for (const ink of inks) {
+        actx.fillStyle = ink
+        for (const ch of chars) {
+          const cx = (i % cols) * atlasCellCss
+          const cy = Math.floor(i / cols) * atlasCellCss
+
+          if (luminous) {
+            actx.shadowColor = ink
+            actx.shadowBlur = fontSize * 1.6
+          } else {
+            actx.shadowColor = 'transparent'
+            actx.shadowBlur = 0
+          }
+
+          actx.fillText(ch, cx + atlasCellCss / 2, cy + atlasCellCss / 2)
+          actx.shadowColor = 'transparent'
+          actx.shadowBlur = 0
+          atlasMap.set(`${ch}|${ink}`, { sx: cx * scaleFactor, sy: cy * scaleFactor })
+          i++
+        }
+      }
     }
-    // ---------------------------------------------------------------------
 
     let reveal = 0
     let revealAt = Infinity
@@ -282,11 +179,39 @@ export default function TempleChime({
       }
     }
 
-    /**
-     * For a given canvas-space x, walk the mast image column from the
-     * bottom up and return the canvas-space y of the lowest opaque
-     * pixel (the roof's under-eave path). null when nothing hangs there.
-     */
+    function findInnerRoofBounds(): { left: number; right: number } | null {
+      const img = imgRef.current
+      if (!img || !contourPixels || !contourW || !contourH) return null
+      const imgRect = img.getBoundingClientRect()
+      let firstX = -1
+      let lastX = -1
+      for (let ix = 0; ix < contourW; ix++) {
+        for (let iy = contourH - 1; iy >= 0; iy--) {
+          if (contourPixels[(iy * contourW + ix) * 4 + 3] > ALPHA_THRESHOLD) {
+            if (firstX === -1) firstX = ix
+            lastX = ix
+            break
+          }
+        }
+      }
+      if (firstX === -1 || lastX === -1) return null
+      const leftPage = imgRect.left + (firstX / contourW) * imgRect.width
+      const rightPage = imgRect.left + (lastX / contourW) * imgRect.width
+      return { left: leftPage, right: rightPage }
+    }
+
+    let innerBounds: { left: number; right: number } | null = null
+
+    function effectiveRoofBounds(): { left: number; right: number } | null {
+      const img = imgRef.current
+      if (!img || !innerBounds) return innerBounds
+      const imgRect = img.getBoundingClientRect()
+      const span = Math.max(0, Math.min(1, roofSpan))
+      const left = innerBounds.left + (imgRect.left - innerBounds.left) * (1 - span)
+      const right = innerBounds.right + (imgRect.right - innerBounds.right) * (1 - span)
+      return { left, right }
+    }
+
     function contourYAt(canvasX: number): number | null {
       const img = imgRef.current
       if (!contourPixels || !img) return 0
@@ -294,11 +219,21 @@ export default function TempleChime({
       const canvasRect = canvas!.getBoundingClientRect()
       const pageX = canvasRect.left + canvasX
       if (pageX < imgRect.left || pageX > imgRect.right) return null
+
+      const bounds = effectiveRoofBounds()
+      if (bounds) {
+        const margin = (bounds.right - bounds.left) * 0.04
+        if (pageX < bounds.left + margin || pageX > bounds.right - margin) return null
+      }
+
       const ix = Math.min(
         contourW - 1,
         Math.max(0, Math.round(((pageX - imgRect.left) / imgRect.width) * contourW)),
       )
-      const halfWin = Math.min(6, Math.max(1, Math.round(((colSpacing / 2) * contourW) / imgRect.width)))
+      const halfWin = Math.min(
+        6,
+        Math.max(1, Math.round(((colSpacing / 2) * contourW) / imgRect.width)),
+      )
       const x0 = Math.max(0, ix - halfWin)
       const x1 = Math.min(contourW - 1, ix + halfWin)
       for (let iy = contourH - 1; iy >= 0; iy--) {
@@ -322,8 +257,10 @@ export default function TempleChime({
       canvas!.height = Math.round(height * dpr)
 
       buildAtlas()
+      innerBounds = findInnerRoofBounds()
 
-      const colCount = Math.max(1, Math.floor(width / colSpacing))
+      const curtainWidth = width * mastWidth * coverage
+      const colCount = Math.max(1, Math.floor(curtainWidth / colSpacing))
       const xOffset = (width - (colCount - 1) * colSpacing) / 2
 
       columns = []
@@ -336,30 +273,27 @@ export default function TempleChime({
         const available = height - startY
         if (available < rowSpacing * 3) continue
 
-        const wave = 0.5 + 0.5 * Math.sin(c * 0.5 + rand(c * 2.1) * 1.8)
+        const wave = 0.5 + 0.5 * Math.sin(c * 0.55 + rand(c * 2.1) * 1.8)
         const lengthJitter = 1 - raggedness + (rand(c * 7.3) * 0.55 + wave * 0.45) * raggedness
         const colRows = Math.max(
           3,
           Math.floor((available / rowSpacing) * lengthScale * lengthJitter),
         )
 
+        const charOffset = Math.floor(rand(c * 3.7) * charPool.length)
+
         const chain: Node[] = []
         for (let r = 0; r < colRows; r++) {
           const seed = c * 131 + r * 17
-          const homeX = colX + (rand(seed + 3) - 0.5) * 1.4
+          const homeX = colX + (rand(seed + 3) - 0.5) * 1.6
           const homeY = startY + r * rowSpacing
-          const isLast = r === colRows - 1
-          const isSpacer = !isLast && r > 0 && (r + Math.floor(rand(c * 4.2) * 5)) % 5 === 0
 
-          const kind: NodeKind = isLast ? 'bell' : isSpacer ? 'spacer' : 'bead'
           const ink =
-            kind === 'bead'
-              ? beadColors[Math.floor(rand(c * 13.7 + Math.floor(r / 5) * 5.1) * beadColors.length)]
-              : kind === 'spacer'
-                ? SPACER_COLOR
-                : BELL_COLOR
-          const radius = kind === 'bell' ? beadRadius * 1.35 : kind === 'spacer' ? beadRadius * 0.7 : beadRadius
+            colors && colors.length > 0
+              ? colors[Math.floor(rand(c * 13.7 + Math.floor(r / 5) * 5.1) * colors.length)]
+              : DEFAULT_COLORS[0]
 
+          const ch = charPool[(charOffset + r) % charPool.length] ?? 'ॐ'
           chain.push({
             x: homeX,
             y: startY + r * 1.2,
@@ -367,11 +301,11 @@ export default function TempleChime({
             py: startY + r * 1.2,
             homeX,
             homeY,
-            kind,
+            char: ch,
+            alpha: inkAlpha,
+            visible: rand(seed + 2) > 0.04,
             color: ink,
-            radius,
-            visible: isLast || rand(seed + 2) > 0.04,
-            cell: atlasMap.get(kind === 'bead' ? `bead|${ink}` : kind) ?? null,
+            cell: atlasMap.get(`${ch}|${ink}`) ?? null,
           })
         }
         columns.push(chain)
@@ -454,7 +388,7 @@ export default function TempleChime({
       ctx!.clearRect(0, 0, width, height)
       if (reveal <= 0 || !atlas) return
 
-      const half = cellCss / 2
+      const half = atlasCellCss / 2
 
       for (let c = 0; c < columns.length; c++) {
         const chain = columns[c]
@@ -462,10 +396,51 @@ export default function TempleChime({
           const n = chain[r]
           if (!n.visible || !n.cell) continue
 
-          const a = clamp01(reveal)
+          const tail = r / chain.length
+          let edgeFade = tail > 0.75 ? 1 - (tail - 0.75) / 0.25 : 1
+          edgeFade *= reveal
+
+          const a = n.alpha * edgeFade
           if (a < 0.02) continue
+
+          let angle = 0
+          if (r > 0) {
+            const p = chain[r - 1]
+            const sdx = n.x - p.x
+            const sdy = n.y - p.y
+            angle = Math.atan2(sdx, Math.max(sdy, 0.001)) * -1
+          }
+
           ctx!.globalAlpha = a
-          ctx!.drawImage(atlas, n.cell.sx, n.cell.sy, n.cell.size, n.cell.size, n.x - half, n.y - half, cellCss, cellCss)
+          if (angle > 0.06 || angle < -0.06) {
+            const cos = Math.cos(angle)
+            const sin = Math.sin(angle)
+            ctx!.setTransform(dpr * cos, dpr * sin, -dpr * sin, dpr * cos, dpr * n.x, dpr * n.y)
+            ctx!.drawImage(
+              atlas,
+              n.cell.sx,
+              n.cell.sy,
+              atlasCellDevice,
+              atlasCellDevice,
+              -half,
+              -half,
+              atlasCellCss,
+              atlasCellCss,
+            )
+            ctx!.setTransform(dpr, 0, 0, dpr, 0, 0)
+          } else {
+            ctx!.drawImage(
+              atlas,
+              n.cell.sx,
+              n.cell.sy,
+              atlasCellDevice,
+              atlasCellDevice,
+              n.x - half,
+              n.y - half,
+              atlasCellCss,
+              atlasCellCss,
+            )
+          }
         }
       }
       ctx!.globalAlpha = 1
@@ -522,6 +497,7 @@ export default function TempleChime({
       }
       if (img.complete && img.naturalWidth > 0) {
         sampleContourImage(img)
+        innerBounds = findInnerRoofBounds()
         build()
         revealAt = performance.now() + 380
       } else {
@@ -529,6 +505,7 @@ export default function TempleChime({
           'load',
           () => {
             sampleContourImage(img)
+            innerBounds = findInnerRoofBounds()
             build()
             revealAt = performance.now() + 380
           },
@@ -559,11 +536,30 @@ export default function TempleChime({
       window.removeEventListener('pointerdown', onPointerDown)
       document.removeEventListener('mouseleave', onPointerLeave)
     }
-  }, [imageSrc, beadColors, scale, lengthScale, raggedness, mouseRadius, luminous, muted])
+  }, [
+    charPool,
+    colors,
+    inkAlpha,
+    scale,
+    lengthScale,
+    raggedness,
+    mouseRadius,
+    luminous,
+    imageSrc,
+    roofSpan,
+    coverage,
+    colorMode,
+    muted,
+  ])
 
   return (
     <div className={`relative ${className ?? ''}`}>
-      <canvas ref={canvasRef} aria-hidden="true" className="absolute inset-0" style={{ width: '100%', height: '100%' }} />
+      <canvas
+        ref={canvasRef}
+        aria-hidden="true"
+        className="absolute inset-0"
+        style={{ width: '100%', height: '100%' }}
+      />
       <img
         id={mastId}
         ref={imgRef}
