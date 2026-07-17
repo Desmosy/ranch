@@ -19,6 +19,17 @@ A beautiful, glassmorphic 3D atom component perfect for showcasing complex struc
 **Usage:**
 Simply copy the files from `components/prism-atom/` into your React project.
 
+### 2. Temple Chime
+A hanging bead curtain that sways and rings beneath a gilded Nepali temple roof-ridge. Each strand is a Verlet-physics chain of beads tipped with a small bell, pinned to the roof's actual silhouette (traced from the image's alpha channel) rather than a straight line. The cursor parts the strands like a real doorway curtain — a wind chime you can brush your hand through, inspired by the beaded curtains hanging in doorways at home.
+
+**Features:**
+- Physics-based bead curtain (Verlet chain, contour-pinned to the roof image)
+- Synthesized Web Audio bead-knock + temple-bell chime, no audio files
+- Customizable bead size, strand length, raggedness, mouse reach, and glow
+
+**Usage:**
+Simply copy the files from `components/temple-chime/` into your React project.
+
 *(More components coming soon!)*
 
 ---

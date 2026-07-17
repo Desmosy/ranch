@@ -1,6 +1,8 @@
 *
 !*/
 !components/prism-atom/*
+!components/temple-chime/*
+!components/temple-chime/assets/*
 !.gitignore
 !README.md
 !LICENSE
