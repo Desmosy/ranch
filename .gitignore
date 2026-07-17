@@ -2,3 +2,5 @@
 !*/
 !components/prism-atom/*
 !.gitignore
+!README.md
+!LICENSE
