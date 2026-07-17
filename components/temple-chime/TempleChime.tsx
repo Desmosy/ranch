@@ -44,8 +44,8 @@ const DEFAULT_COLORS = ['#e8c46a', '#2f9e8f', '#c0453f', '#3a5fc0', '#e8c46a']
 const COL_SPACING = 9
 const ROW_SPACING = 10
 const FONT_SIZE = 7.5
-const DAMPING = 0.94
-const HOME_STIFFNESS = 0.014
+const DAMPING = 0.96
+const HOME_STIFFNESS = 0.012
 const CONSTRAINT_ITERATIONS = 2
 const ALPHA_THRESHOLD = 24
 
@@ -296,9 +296,9 @@ export default function TempleChime({
           const ch = charPool[(charOffset + r) % charPool.length] ?? 'ॐ'
           chain.push({
             x: homeX,
-            y: startY + r * 1.2,
+            y: startY + r * rowSpacing * 0.45,
             px: homeX,
-            py: startY + r * 1.2,
+            py: startY + r * rowSpacing * 0.45,
             homeX,
             homeY,
             char: ch,
@@ -449,7 +449,7 @@ export default function TempleChime({
     function loop() {
       if (!running) return
       if (performance.now() >= revealAt) {
-        if (reveal < 1) reveal = Math.min(1, reveal + 0.025)
+        if (reveal < 1) reveal = Math.min(1, reveal + 0.015)
         step()
       }
       draw()
