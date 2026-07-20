@@ -3,6 +3,11 @@
 !components/prism-atom/*
 !components/temple-chime/*
 !components/temple-chime/assets/*
+!components/holo-card/*
+!components/assets/*
+!RanchIndex.tsx
+!RanchRouter.tsx
+!RanchNavigation.tsx
 !.gitignore
 !README.md
 !LICENSE
