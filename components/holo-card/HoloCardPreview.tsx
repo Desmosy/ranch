@@ -100,15 +100,6 @@ export default function HoloCardPreview() {
             );
           })}
         </div>
-
-        <p
-          className={cn(
-            "text-center text-xs uppercase tracking-[0.35em] select-none transition-colors duration-500",
-            dark ? "text-white/30" : "text-black/40"
-          )}
-        >
-          {activeCard.name} · move your cursor across the card
-        </p>
       </div>
 
       <nav className="absolute left-6 top-6 z-30 flex items-center gap-2" aria-label="Ranch navigation">
